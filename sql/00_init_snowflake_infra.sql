@@ -1,7 +1,7 @@
 -- Usa el rol de superusuario del sistema para crear infraestructura
 USE ROLE ACCOUNTADMIN;
 
--- Crea el clúster de cómputo (Warehouse) optimizado para costos
+-- Crea el clúster de cómputo (Warehouse)
 CREATE WAREHOUSE IF NOT EXISTS RAPPI_WH
     WITH WAREHOUSE_SIZE = 'XSMALL'
     AUTO_SUSPEND = 60
