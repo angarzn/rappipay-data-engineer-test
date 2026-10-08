@@ -1,7 +1,12 @@
+import json
+
 from airflow import DAG
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
+from airflow.providers.http.operators.http import HttpOperator
 from airflow.operators.empty import EmptyOperator
 from datetime import datetime, timedelta
+
+
 
 # Configuración base del DAG
 default_args = {
@@ -100,52 +105,64 @@ with DAG(
     start_pipeline = EmptyOperator(task_id='start_pipeline')
     end_pipeline = EmptyOperator(task_id='end_pipeline')
 
-    # Tarea 1
+    # Tarea Snowflake 1
     task_groups = SnowflakeOperator(
         task_id='create_groups_summary',
         snowflake_conn_id='snowflake_default', # La conexión que creamos en la interfaz
         sql=query_groups,
     )
 
-    # Tarea 2
+    # Tarea Snowflake 2
     task_cities = SnowflakeOperator(
         task_id='create_city_metrics',
         snowflake_conn_id='snowflake_default',
         sql=query_cities
     )
 
-    # Tarea 3
+    # Tarea Snowflake 3
     task_interests = SnowflakeOperator(
         task_id='create_interests_summary',
         snowflake_conn_id='snowflake_default',
         sql=query_interests
     )
 
-    # Tarea 4
+    # Tarea Snowflake 4
     task_venues = SnowflakeOperator(
         task_id='create_venue_stats',
         snowflake_conn_id='snowflake_default',
         sql=query_venues
     )
     
-    # Tarea 5
+    # Tarea Snowflake 5
     task_generate_synthetic = SnowflakeOperator(
         task_id='generate_synthetic_activity',
         snowflake_conn_id='snowflake_default',
         sql=query_generate_synthetic
     )
     
-    # Tarea 6
+    # Tarea Snowflake 6
     task_merge_data = SnowflakeOperator(
         task_id='merge_synthetic_data',
         snowflake_conn_id='snowflake_default',
         sql=query_merge_data
     )
 
+    # Tarea Slack
+    task_slack_alert = HttpOperator(
+        task_id='send_slack_alert',
+        http_conn_id='slack_conn',
+        endpoint='T0C7P0SP19P/B0C7K51RP2A/95QpPToj03BAytQbyyFKdvcT', 
+        method='POST',
+        data=json.dumps({
+            "text": "🚀 *Pipeline ETL Exitoso*\n✅ Capa RAW leída correctamente.\n✅ Datos Maestros y Sintéticos (MERGE) actualizados en Snowflake."
+        }),
+        headers={"Content-Type": "application/json"},
+    )
+
     # Flujo de ejecución
     start_pipeline >> [task_groups, task_cities, task_interests, task_venues]
     
-    task_cities >> task_generate_synthetic >> task_merge_data >> end_pipeline
+    task_cities >> task_generate_synthetic >> task_merge_data >> task_slack_alert >> end_pipeline
     task_groups >> end_pipeline
     task_interests >> end_pipeline
     task_venues >> end_pipeline
