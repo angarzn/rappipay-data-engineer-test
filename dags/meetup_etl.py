@@ -27,7 +27,7 @@ with DAG(
     # Mide el nivel de actividad de cada grupo. Expone cuántos eventos históricos han organizado y la fecha de su evento más reciente,
     # lo que permite identificar rápidamente comunidades líderes frente a grupos inactivos.
     query_groups = """
-    CREATE OR REPLACE TABLE MEETUP_DB.MASTER.GROUPS_EVENTS_SUMMARY AS
+    CREATE TABLE IF NOT EXISTS MEETUP_DB.MASTER.GROUPS_EVENTS_SUMMARY AS
     SELECT 
         g.GROUP_ID,
         g.GROUP_NAME,
@@ -45,7 +45,7 @@ with DAG(
 
     # Muestra el volumen total de grupos y eventos por ciudad y país, información clave para decidir dónde enfocar campañas de marketing o expansión.
     query_cities = """
-    CREATE OR REPLACE TABLE MEETUP_DB.MASTER.CITY_ACTIVITY_METRICS AS
+    CREATE TABLE IF NOT EXISTS MEETUP_DB.MASTER.CITY_ACTIVITY_METRICS AS
     SELECT 
         c.CITY, c.COUNTRY, 
         COUNT(DISTINCT g.GROUP_ID) AS total_groups, 
@@ -59,7 +59,7 @@ with DAG(
     # Revela la popularidad de las temáticas en toda la plataforma. Contabiliza cuántos usuarios reales siguen cada tópico,
     # vital para entender la demanda macro y predecir qué tipos de eventos tendrán más asistencia.
     query_interests = """
-    CREATE OR REPLACE TABLE MEETUP_DB.MASTER.MEMBER_INTERESTS_SUMMARY AS
+    CREATE TABLE IF NOT EXISTS MEETUP_DB.MASTER.MEMBER_INTERESTS_SUMMARY AS
     SELECT 
         t.TOPIC_NAME, 
         COUNT(mt.MEMBER_ID) AS total_interested_members
@@ -70,13 +70,30 @@ with DAG(
 
     # Identifica los espacios físicos más recurrentes, permite descubrir locaciones clave
     query_venues = """
-    CREATE OR REPLACE TABLE MEETUP_DB.MASTER.VENUE_USAGE_STATS AS
+    CREATE TABLE IF NOT EXISTS MEETUP_DB.MASTER.VENUE_USAGE_STATS AS
     SELECT 
         v.VENUE_ID, v.VENUE_NAME, v.CITY, 
         COUNT(e.EVENT_ID) AS total_events_hosted
     FROM MEETUP_DB.RAW.RAW_VENUES v
     JOIN MEETUP_DB.RAW.RAW_EVENTS e ON v.VENUE_ID = e.VENUE_ID
     GROUP BY v.VENUE_ID, v.VENUE_NAME, v.CITY;
+    """
+
+    # Crea una tabla temporal seleccionando 5 ciudades al azar y asignándoles entre 1 y 50 eventos nuevos usando funciones nativas.
+    query_generate_synthetic = """
+    CREATE OR REPLACE TABLE MEETUP_DB.MASTER.SYNTHETIC_ACTIVITY AS 
+    SELECT CITY, UNIFORM(1, 50, RANDOM()) AS new_synthetic_events
+    FROM MEETUP_DB.RAW.RAW_CITIES 
+    SAMPLE (5 ROWS);
+    """
+
+    # Actualiza la tabla maestra sumando los eventos ficticios únicamente a las ciudades que hicieron match.
+    query_merge_data = """
+    MERGE INTO MEETUP_DB.MASTER.CITY_ACTIVITY_METRICS target
+    USING MEETUP_DB.MASTER.SYNTHETIC_ACTIVITY source
+    ON target.CITY = source.CITY
+    WHEN MATCHED THEN 
+        UPDATE SET target.TOTAL_EVENTS = target.TOTAL_EVENTS + source.new_synthetic_events;
     """
 
     # Nodos flag de inicio y fin 
@@ -110,6 +127,25 @@ with DAG(
         snowflake_conn_id='snowflake_default',
         sql=query_venues
     )
+    
+    # Tarea 5
+    task_generate_synthetic = SnowflakeOperator(
+        task_id='generate_synthetic_activity',
+        snowflake_conn_id='snowflake_default',
+        sql=query_generate_synthetic
+    )
+    
+    # Tarea 6
+    task_merge_data = SnowflakeOperator(
+        task_id='merge_synthetic_data',
+        snowflake_conn_id='snowflake_default',
+        sql=query_merge_data
+    )
 
     # Flujo de ejecución
-    start_pipeline >> [task_groups, task_cities, task_interests, task_venues] >> end_pipeline
+    start_pipeline >> [task_groups, task_cities, task_interests, task_venues]
+    
+    task_cities >> task_generate_synthetic >> task_merge_data >> end_pipeline
+    task_groups >> end_pipeline
+    task_interests >> end_pipeline
+    task_venues >> end_pipeline
