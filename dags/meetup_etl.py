@@ -103,9 +103,16 @@ with DAG(
         UPDATE SET target.TOTAL_EVENTS = target.TOTAL_EVENTS + source.new_synthetic_events;
     """
 
+    # Exporta la tabla MASTER.CITY_ACTIVITY_METRICS a S3 usando el Stage de Snowflake creado
+    query_export_s3 = """
+    COPY INTO @MEETUP_DB.MASTER.s3_export_stage/city_metrics_export/city_metrics_{{ ts_nodash }}_
+    FROM MEETUP_DB.MASTER.CITY_ACTIVITY_METRICS
+    FILE_FORMAT = (TYPE = PARQUET);
+    """
+
     # Nodos flag de inicio y fin 
     start_pipeline = EmptyOperator(task_id='start_pipeline')
-    end_pipeline = EmptyOperator(task_id='end_pipeline')
+    end_pipeline = EmptyOperator(task_id='end_pipeline', trigger_rule=TriggerRule.NONE_FAILED)
 
     # Tarea Snowflake 1
     task_groups = SnowflakeOperator(
@@ -153,10 +160,10 @@ with DAG(
     task_slack_alert = HttpOperator(
         task_id='send_slack_alert_success',
         http_conn_id='slack_conn',
-        endpoint='T0000000000/B0000000000/XXXXXXXXXXXXXXXXXXXXXXXX', # Placeholder por seguridad 
+        endpoint='T0C7P0SP19P/B0C7K51RP2A/95QpPToj03BAytQbyyFKdvcT', # Placeholder por seguridad 
         method='POST',
         data=json.dumps({
-            "text": "🚀 *Pipeline ETL Exitoso*\n✅ Capa RAW leída correctamente.\n✅ Datos Master y Sintéticos (MERGE) actualizados en Snowflake."
+            "text": "🚀 *Pipeline ETL Exitoso*\n✅ Datos procesados y MERGE completado.\n✅ Exportación a S3 finalizada con éxito."
         }),
         headers={"Content-Type": "application/json"},
     )
@@ -164,7 +171,7 @@ with DAG(
     task_slack_alert_fail = HttpOperator(
         task_id='send_slack_alert_fail',
         http_conn_id='slack_conn',
-        endpoint='T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX',
+        endpoint='T0C7P0SP19P/B0C7K51RP2A/95QpPToj03BAytQbyyFKdvcT',
         method='POST',
         data=json.dumps({
             "text": "🚨 *ALERTA CRÍTICA: Fallo en el Pipeline*\nEl proceso de MERGE en Snowflake falló. Revisar logs inmediatamente."
@@ -172,11 +179,16 @@ with DAG(
         headers={"Content-Type": "application/json"},
         trigger_rule=TriggerRule.ONE_FAILED # Condición para fallo
     )
-
+    
+    task_export_s3 = SnowflakeOperator(
+        task_id='export_metrics_to_s3',
+        snowflake_conn_id='snowflake_default',
+        sql=query_export_s3
+    )
     # Flujo de ejecución
     start_pipeline >> [task_groups, task_cities, task_interests, task_venues]
     
-    task_cities >> task_generate_synthetic >> task_merge_data >> [task_slack_alert, task_slack_alert_fail] >> end_pipeline
+    task_cities >> task_generate_synthetic >> task_merge_data >> task_export_s3 >> [task_slack_alert, task_slack_alert_fail] >> end_pipeline
     task_groups >> end_pipeline
     task_interests >> end_pipeline
     task_venues >> end_pipeline
