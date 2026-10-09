@@ -4,7 +4,9 @@ from airflow import DAG
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from airflow.providers.http.operators.http import HttpOperator
 from airflow.operators.empty import EmptyOperator
+from airflow.utils.trigger_rule import TriggerRule
 from datetime import datetime, timedelta
+
 
 
 
@@ -108,7 +110,7 @@ with DAG(
     # Tarea Snowflake 1
     task_groups = SnowflakeOperator(
         task_id='create_groups_summary',
-        snowflake_conn_id='snowflake_default', # La conexión que creamos en la interfaz
+        snowflake_conn_id='snowflake_default',
         sql=query_groups,
     )
 
@@ -147,22 +149,34 @@ with DAG(
         sql=query_merge_data
     )
 
-    # Tarea Slack
+    # Tarea Slack - Alerta OK
     task_slack_alert = HttpOperator(
-        task_id='send_slack_alert',
+        task_id='send_slack_alert_success',
         http_conn_id='slack_conn',
-        endpoint='T0C7P0SP19P/B0C7K51RP2A/95QpPToj03BAytQbyyFKdvcT', 
+        endpoint='T0000000000/B0000000000/XXXXXXXXXXXXXXXXXXXXXXXX', # Placeholder por seguridad 
         method='POST',
         data=json.dumps({
-            "text": "🚀 *Pipeline ETL Exitoso*\n✅ Capa RAW leída correctamente.\n✅ Datos Maestros y Sintéticos (MERGE) actualizados en Snowflake."
+            "text": "🚀 *Pipeline ETL Exitoso*\n✅ Capa RAW leída correctamente.\n✅ Datos Master y Sintéticos (MERGE) actualizados en Snowflake."
         }),
         headers={"Content-Type": "application/json"},
+    )
+
+    task_slack_alert_fail = HttpOperator(
+        task_id='send_slack_alert_fail',
+        http_conn_id='slack_conn',
+        endpoint='T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX',
+        method='POST',
+        data=json.dumps({
+            "text": "🚨 *ALERTA CRÍTICA: Fallo en el Pipeline*\nEl proceso de MERGE en Snowflake falló. Revisar logs inmediatamente."
+        }),
+        headers={"Content-Type": "application/json"},
+        trigger_rule=TriggerRule.ONE_FAILED # Condición para fallo
     )
 
     # Flujo de ejecución
     start_pipeline >> [task_groups, task_cities, task_interests, task_venues]
     
-    task_cities >> task_generate_synthetic >> task_merge_data >> task_slack_alert >> end_pipeline
+    task_cities >> task_generate_synthetic >> task_merge_data >> [task_slack_alert, task_slack_alert_fail] >> end_pipeline
     task_groups >> end_pipeline
     task_interests >> end_pipeline
     task_venues >> end_pipeline
