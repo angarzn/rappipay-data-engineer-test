@@ -1,45 +1,40 @@
-Overview
-========
+# Meetup Analytics ETL Pipeline
 
-Welcome to Astronomer! This project was generated after you ran 'astro dev init' using the Astronomer CLI. This readme describes the contents of the project, as well as how to run Apache Airflow on your local machine.
+Este repositorio contiene la solución a la prueba técnica de RappiPay para Data Engineer. Se implementó un pipeline automatizado (Data Lakehouse) utilizando **Apache Airflow**, **Snowflake** y **AWS S3**.
 
-Project Contents
-================
+El proyecto toma datos crudos de la plataforma Meetup (Kaggle) y los transforma en una capa analítica (MASTER) preparada para el consumo de BI, garantizando observabilidad, seguridad y persistencia histórica.
 
-Your Astro project contains the following files and folders:
+## Arquitectura y Características Principales
 
-- dags: This folder contains the Python files for your Airflow Dags. By default, this directory includes one example Dag:
-    - `example_astronauts`: This Dag shows a simple ETL pipeline example that queries the list of astronauts currently in space from the Open Notify API and prints a statement for each astronaut. The Dag uses the TaskFlow API to define tasks in Python, and dynamic task mapping to dynamically print a statement for each astronaut. For more on how this Dag works, see our [Getting started tutorial](https://www.astronomer.io/docs/learn/get-started-with-airflow).
-- Dockerfile: This file contains a versioned Astro Runtime Docker image that provides a differentiated Airflow experience. If you want to execute other commands or overrides at runtime, specify them here.
-- include: This folder contains any additional files that you want to include as part of your project. It is empty by default.
-- packages.txt: Install OS-level packages needed for your project by adding them to this file. It is empty by default.
-- requirements.txt: Install Python packages needed for your project by adding them to this file. It is empty by default.
-- plugins: Add custom or community plugins for your project to this file. It is empty by default.
-- airflow_settings.yaml: Use this local-only file to specify Airflow Connections, Variables, and Pools instead of entering them in the Airflow UI as you develop Dags in this project.
+* **Orquestación Paralela (Airflow):** DAG programado con intervalos de 15 minutos que ejecuta la transformación de tablas maestras de forma concurrente, optimizando los tiempos de procesamiento.
+* **Carga Incremental y Generación Sintética:** En lugar de sobreescrituras destructivas, se implementó un patrón de carga incremental utilizando la sentencia `MERGE` en Snowflake. Se combinan funciones nativas (`UNIFORM`, `RANDOM`, `SAMPLE`) para inyectar tráfico sintético y simular el crecimiento real de la plataforma.
+* **Observabilidad y Manejo de Excepciones:** Integración nativa con Webhooks de **Slack**. El DAG utiliza ramificación condicional (`TriggerRule.ONE_FAILED`) para enviar alertas rojas críticas en caso de fallos y notificaciones verdes de éxito al finalizar correctamente.
+* **Cross-Cloud Data Lake (AWS S3):** Exportación automatizada de los reportes analíticos a Amazon S3. Se implementó una arquitectura de seguridad mediante **Roles IAM y Storage Integrations** (evitando quemar credenciales en código). 
+* **Optimización de Almacenamiento:** Los datos se exportan en formato columnar **Parquet** (compresión Snappy) y se versionan dinámicamente en cada ejecución, previniendo la sobreescritura y creando un histórico perfecto en el Data Lake.
 
-Deploy Your Project Locally
-===========================
+## Evidencias
+Dentro de la carpeta `evidences/` se encuentra el registro visual del funcionamiento de las bases de datos, las alertas de Slack, los grafos de Airflow y los archivos Parquet versionados en AWS S3.
 
-Start Airflow on your local machine by running 'astro dev start'.
+## Despliegue del Proyecto Localmente
 
-This command will spin up five Docker containers on your machine, each for a different Airflow component:
+Inicia Airflow en tu máquina local ejecutando `astro dev start`.
 
-- Postgres: Airflow's Metadata Database
-- Scheduler: The Airflow component responsible for monitoring and triggering tasks
-- Dag Processor: The Airflow component responsible for parsing Dags
-- API Server: The Airflow component responsible for serving the Airflow UI and API
-- Triggerer: The Airflow component responsible for triggering deferred tasks
+Este comando levantará cinco contenedores de Docker en tu máquina, cada uno para un componente diferente de Airflow:
 
-When all five containers are ready the command will open the browser to the Airflow UI at http://localhost:8080/. You should also be able to access your Postgres Database at 'localhost:5432/postgres' with username 'postgres' and password 'postgres'.
+- **Postgres:** La base de datos de metadatos de Airflow.
+- **Scheduler:** El componente de Airflow responsable de monitorear y disparar las tareas.
+- **Dag Processor:** El componente de Airflow responsable de analizar e interpretar los DAGs.
+- **API Server:** El componente de Airflow responsable de servir la interfaz de usuario (UI) y la API.
+- **Triggerer:** El componente de Airflow responsable de ejecutar las tareas diferidas.
 
-Note: If you already have either of the above ports allocated, you can either [stop your existing Docker containers or change the port](https://www.astronomer.io/docs/astro/cli/troubleshoot-locally#ports-are-not-available-for-my-local-airflow-webserver).
+Cuando los cinco contenedores estén listos, el comando abrirá automáticamente tu navegador en la interfaz de Airflow en `http://localhost:8080/`. También deberías poder acceder a tu base de datos Postgres en `localhost:5432/postgres` con el usuario `postgres` y la contraseña `postgres`.
 
-Deploy Your Project to Astronomer
-=================================
+*Nota: Si ya tienes alguno de los puertos mencionados ocupados, puedes [detener tus contenedores de Docker existentes o cambiar el puerto](https://www.astronomer.io/docs/astro/cli/troubleshoot-locally#ports-are-not-available-for-my-local-airflow-webserver).*
 
-If you have an Astronomer account, pushing code to a Deployment on Astronomer is simple. For deploying instructions, refer to Astronomer documentation: https://www.astronomer.io/docs/astro/deploy-code/
+## Despliega tu Proyecto en Astronomer
 
-Contact
-=======
+Si tienes una cuenta de Astronomer, subir tu código a un entorno de producción en Astronomer es muy sencillo. Para obtener instrucciones de despliegue, consulta la documentación oficial: https://www.astronomer.io/docs/astro/deploy-code/
 
-The Astronomer CLI is maintained with love by the Astronomer team. To report a bug or suggest a change, reach out to our support.
+## Contacto
+
+La CLI de Astronomer es mantenida con dedicación por el equipo de Astronomer. Para reportar un error (bug) o sugerir un cambio, comunícate con el equipo de soporte oficial.
